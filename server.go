@@ -55,6 +55,7 @@ type connection struct {
 	done chan<- *connection
 	id int
 	closed bool
+	error bool
 }
 
 func (c *connection) Address() net.Addr {
@@ -64,7 +65,7 @@ func (c *connection) Id() int {
 	return c.id
 }
 func (c *connection) Send(msg Message) {
-	if c.closed {
+	if c.closed || c.error {
 		return
 	}
 	bytes := msg.Bytes()
@@ -79,7 +80,7 @@ func (c *connection) Send(msg Message) {
 	}
 }
 func (c *connection) Close(){
-	if c.closed {
+	if c.closed || c.error {
 		return
 	}
 	c.closed = true
@@ -112,6 +113,14 @@ func run(port int, tcpServer TcpEventHandler, msgReader MessageReader) error {
 
 
 	defer func(){
+		n := len(connMap)
+		for _,v := range(connMap){
+			v.conn.Close()
+		}
+		for n>0 {
+			<-doneConnChan
+			n--
+		}
 		close(doneConnChan)
 	}()
 
@@ -156,6 +165,7 @@ func handle(conn *connection, msgReader MessageReader, tcpServer TcpEventHandler
 	for {
 		m,err := msgReader.Read(conn.conn)
 		if err != nil {
+			conn.error = true
 			if conn.closed || err == io.EOF {
 				return
 			}
